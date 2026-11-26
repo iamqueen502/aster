@@ -105,7 +105,8 @@ export function HomePage({ session }: { session: Session | null }) {
 
 export function ReadingPage({ id, session }: { id: string; session: Session | null }) {
   const [profile, setProfile] = useState<Profile | null>(null)
-  const [state, setState] = useState<'loading' | 'ready' | 'missing'>('loading')
+  const [state, setState] = useState<'loading' | 'ready' | 'missing' | 'failed'>('loading')
+  const [attempt, setAttempt] = useState(0)
   const [tab, setTab] = useState<'chart' | 'learn'>('chart')
   const [selection, setSelection] = useState<Selection | null>({ kind: 'planet', key: 'sun' })
   const [progress, setProgress] = useState<ProgressState>({ lessons: {} })
@@ -116,23 +117,39 @@ export function ReadingPage({ id, session }: { id: string; session: Session | nu
     if (!session) return
     let live = true
     setProgressLoaded(false)
+    setState('loading')
     void (async () => {
-      const found = id === 'sample' ? SAMPLE_PROFILE : await getProfile(id, session)
-      if (!live) return
-      setProfile(found)
-      setState(found ? 'ready' : 'missing')
-      const loaded = await loadProgress(session)
-      if (!live) return
-      setProgress(loaded)
-      setProgressLoaded(true)
+      try {
+        const found = id === 'sample' ? SAMPLE_PROFILE : await getProfile(id, session)
+        if (!live) return
+        setProfile(found)
+        setState(found ? 'ready' : 'missing')
+        const loaded = await loadProgress(session)
+        if (!live) return
+        setProgress(loaded)
+        setProgressLoaded(true)
+      } catch {
+        // A failed request is not a missing chart: keep it retryable.
+        if (live) setState('failed')
+      }
     })()
     return () => {
       live = false
     }
-  }, [id, session])
+  }, [id, session, attempt])
 
   const chart = useMemo(() => (profile ? computeChart(profile) : null), [profile])
 
+  if (state === 'failed')
+    return (
+      <div className="notice">
+        <p role="alert">Could not load this chart. Check your connection and try again.</p>
+        <button onClick={() => setAttempt((count) => count + 1)}>Try again</button>
+        <button className="quiet" onClick={() => navigate('/profiles')}>
+          Back to profiles
+        </button>
+      </div>
+    )
   if (state === 'missing')
     return (
       <div className="notice">
@@ -378,6 +395,8 @@ export function ReadingPage({ id, session }: { id: string; session: Session | nu
 export function ProfilesPage({ session }: { session: Session | null }) {
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
+  const [attempt, setAttempt] = useState(0)
   const [renaming, setRenaming] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
   const [message, setMessage] = useState('')
@@ -387,17 +406,28 @@ export function ProfilesPage({ session }: { session: Session | null }) {
   useEffect(() => {
     if (!session) return
     let live = true
+    setLoading(true)
+    setLoadError('')
     void (async () => {
-      const list = await listProfiles(session)
-      if (live) {
-        setProfiles(list)
-        setLoading(false)
+      try {
+        const list = await listProfiles(session)
+        if (live) {
+          setProfiles(list)
+          setLoading(false)
+        }
+      } catch {
+        // Keep the failure visible: an empty list here would read as "you have
+        // no charts", which is a different and false statement.
+        if (live) {
+          setLoadError('Could not load your charts. Check your connection and try again.')
+          setLoading(false)
+        }
       }
     })()
     return () => {
       live = false
     }
-  }, [session])
+  }, [session, attempt])
 
   async function rename(profile: Profile) {
     const label = draft.trim()
@@ -484,6 +514,11 @@ export function ProfilesPage({ session }: { session: Session | null }) {
 
       {loading ? (
         <p className="notice">Loading…</p>
+      ) : loadError ? (
+        <div className="notice">
+          <p role="alert">{loadError}</p>
+          <button onClick={() => setAttempt((count) => count + 1)}>Try again</button>
+        </div>
       ) : profiles.length === 0 ? (
         <div className="empty-profiles">
           <h2>No charts yet.</h2>

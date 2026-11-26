@@ -55,13 +55,11 @@ export function localProfileCount(): number {
 }
 
 export async function listProfiles(session: Session | null): Promise<Profile[]> {
+  // A failed account request is not the same as an empty account: let the
+  // caller say so and offer a retry instead of substituting this device's copy.
   if (canSync(session)) {
-    try {
-      const result = await api<{ profiles: Profile[] }>('/api/profiles')
-      return result.profiles
-    } catch {
-      return localProfiles()
-    }
+    const result = await api<{ profiles: Profile[] }>('/api/profiles')
+    return result.profiles
   }
   return localProfiles()
 }
