@@ -50,8 +50,9 @@ local preview identity is used; that fallback never applies on a hosted origin.
 ## Tests
 
 `bun test` covers the chart math against independent astronomy checks (a known
-Sun position, DST conversions, the Ascendant on the horizon, the Midheaven at
-transit, house invariance), the API's authentication, ownership and validation
+Sun position, DST conversions including clock readings a change repeated or
+skipped, the Ascendant on the horizon, the Midheaven at transit, house
+invariance), the API's authentication, ownership and validation
 rules against a real local D1 database, and the client's single-write-path
 behaviour for both guests and signed-in users, including a lesson step whose
 account write failed being retried on the next load instead of lost. A rendered

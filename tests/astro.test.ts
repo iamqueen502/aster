@@ -50,6 +50,7 @@ test('a local clock time converts through the zone’s real daylight-saving rule
   const summer = localToUtc('1990-05-17', '14:30', 'America/New_York')
   expect(summer.utc.toISOString()).toBe('1990-05-17T18:30:00.000Z')
   expect(summer.offsetMinutes).toBe(-240)
+  expect(summer.kind).toBe('unique')
 
   const winter = localToUtc('1990-01-15', '12:00', 'America/New_York')
   expect(winter.utc.toISOString()).toBe('1990-01-15T17:00:00.000Z')
@@ -57,6 +58,75 @@ test('a local clock time converts through the zone’s real daylight-saving rule
 
   const lisbon = localToUtc('2024-07-01', '09:00', 'Europe/Lisbon')
   expect(lisbon.utc.toISOString()).toBe('2024-07-01T08:00:00.000Z')
+})
+
+test('a clock time that happened twice resolves to its first occurrence and says so', () => {
+  const repeated = localToUtc('2024-11-03', '01:30', 'America/New_York')
+  expect(repeated.kind).toBe('ambiguous')
+  expect(repeated.utc.toISOString()).toBe('2024-11-03T05:30:00.000Z')
+  expect(repeated.offsetMinutes).toBe(-240)
+  expect(repeated.other!.utc.toISOString()).toBe('2024-11-03T06:30:00.000Z')
+  expect(repeated.other!.offsetMinutes).toBe(-300)
+
+  const chart = computeChart({
+    ...SAMPLE_PROFILE,
+    birthDate: '2024-11-03',
+    birthTime: '01:30',
+    tz: 'America/New_York',
+  })
+  expect(chart.localTime).toBe('01:30')
+  expect(chart.warnings.join(' ')).toContain('twice on 2024-11-03')
+  expect(chart.warnings.join(' ')).toContain('first occurrence')
+  expect(chart.offsetLabel).toBe('UTC−04:00')
+})
+
+test('a clock time the clock skipped moves to the time it jumped to and says so', () => {
+  const skipped = localToUtc('2024-03-10', '02:30', 'America/New_York')
+  expect(skipped.kind).toBe('nonexistent')
+  expect(skipped.utc.toISOString()).toBe('2024-03-10T07:30:00.000Z')
+  expect(skipped.offsetMinutes).toBe(-240)
+
+  const chart = computeChart({
+    ...SAMPLE_PROFILE,
+    birthDate: '2024-03-10',
+    birthTime: '02:30',
+    tz: 'America/New_York',
+  })
+  expect(chart.localTime).toBe('03:30')
+  expect(chart.warnings.join(' ')).toContain('skipped 02:30')
+  expect(chart.localLabel).toContain('03:30')
+  expect(chart.offsetLabel).toBe('UTC−04:00')
+})
+
+test('half-hour and whole-day clock changes follow the same rule', () => {
+  const midnight = localToUtc('2018-11-04', '00:30', 'America/Sao_Paulo')
+  expect(midnight.kind).toBe('nonexistent')
+  expect(midnight.utc.toISOString()).toBe('2018-11-04T03:30:00.000Z')
+  expect(midnight.offsetMinutes).toBe(-120)
+
+  const halfHour = localToUtc('2024-04-07', '01:45', 'Australia/Lord_Howe')
+  expect(halfHour.kind).toBe('ambiguous')
+  expect(halfHour.utc.toISOString()).toBe('2024-04-06T14:45:00.000Z')
+  expect(halfHour.offsetMinutes).toBe(660)
+  expect(halfHour.other!.utc.toISOString()).toBe('2024-04-06T15:15:00.000Z')
+  expect(halfHour.other!.offsetMinutes).toBe(630)
+
+  // Samoa skipped 30 December 2011 entirely when it crossed the date line,
+  // so the reading has to move to the next day, not just the next hour.
+  const skippedDay = localToUtc('2011-12-30', '12:00', 'Pacific/Apia')
+  expect(skippedDay.kind).toBe('nonexistent')
+  expect(skippedDay.utc.toISOString()).toBe('2011-12-30T22:00:00.000Z')
+  expect(skippedDay.offsetMinutes).toBe(840)
+  const samoa = computeChart({
+    ...SAMPLE_PROFILE,
+    birthDate: '2011-12-30',
+    birthTime: '12:00',
+    tz: 'Pacific/Apia',
+    lat: -13.85,
+    lon: -171.75,
+  })
+  expect(samoa.localLabel).toContain('2011-12-31 12:00')
+  expect(samoa.warnings.join(' ')).toContain('skipped 12:00')
 })
 
 test('the Ascendant lies on the eastern horizon', () => {

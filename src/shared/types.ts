@@ -80,6 +80,8 @@ export type Aspect = {
 
 export type Chart = {
   timeKnown: boolean
+  /** HH:MM the chart actually used; a skipped clock time moves forward. */
+  localTime: string
   /** Local clock time used for the calculation. */
   localLabel: string
   utcLabel: string
