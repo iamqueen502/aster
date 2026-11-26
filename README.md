@@ -30,6 +30,7 @@ bun run dev        # http://localhost:3000
 bun run typecheck
 bun test
 bun run build
+bun run smoke:worker   # boots the built worker in workerd
 ```
 
 The dev server binds to `0.0.0.0` and runs the Worker with a local D1 database.
@@ -53,6 +54,17 @@ Sun position, DST conversions, the Ascendant on the horizon, the Midheaven at
 transit, house invariance), the API's authentication, ownership and validation
 rules against a real local D1 database, and the client's single-write-path
 behaviour for both guests and signed-in users.
+
+Those tests import the app factory with an injected identity, which leaves the
+deployed path uncovered. `bun run smoke:worker` closes that gap: it loads
+`dist/web_app/index.js` into workerd through Miniflare with the same asset and
+D1 bindings the Worker gets, and checks the static files and SPA fallback, the
+API, the session cookie, a full sign-in → save → sign-out cycle, and a Worker
+deployed with no auth configuration. Sign-in runs against a local stand-in
+OpenID provider that implements discovery, PKCE, token exchange and revocation,
+so the wiring is exercised without Freebuff credentials. It does not test
+Freebuff's real issuer, a real consent screen or a real account; those need a
+deployed origin and a browser.
 
 ## Limits
 

@@ -21,3 +21,8 @@ jobs:
         run: bun test
       - name: Build
         run: bun run build
+      # Boots dist/web_app/index.js in workerd with the deployed bindings, so
+      # the real entrypoint and @freebuff/auth routes are covered, not just the
+      # app factory the unit tests import.
+      - name: Worker smoke test
+        run: bun run smoke:worker
