@@ -82,6 +82,8 @@ export type Chart = {
   timeKnown: boolean
   /** HH:MM the chart actually used; a skipped clock time moves forward. */
   localTime: string
+  /** YYYY-MM-DD the chart actually used; a skipped day moves forward. */
+  localDate: string
   /** Local clock time used for the calculation. */
   localLabel: string
   utcLabel: string

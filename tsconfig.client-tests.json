@@ -3,5 +3,5 @@
   "compilerOptions": {
     "types": ["bun", "vite/client"]
   },
-  "include": ["tests/reading-progress.test.tsx"]
+  "include": ["tests/reading-progress.test.tsx", "tests/chart-warnings.test.tsx"]
 }

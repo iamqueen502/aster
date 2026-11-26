@@ -331,9 +331,15 @@ export function ReadingPage({ id, session }: { id: string; session: Session | nu
                 Birth clock <strong>{profile.birthTime || '12:00'}</strong> in{' '}
                 <strong>{profile.tz}</strong> was converted to <strong>{chart.utcLabel}</strong> (
                 {chart.offsetLabel}), using the zone's historical daylight-saving rules.
-                {profile.timeKnown && chart.localTime !== profile.birthTime && (
-                  <> The clock skipped that reading, so the chart uses {chart.localTime}.</>
-                )}
+                {profile.timeKnown &&
+                  (chart.localDate !== profile.birthDate ||
+                    chart.localTime !== profile.birthTime) && (
+                    <>
+                      {' '}The clock skipped that reading, so the chart uses{' '}
+                      {chart.localDate !== profile.birthDate ? `${chart.localDate} ` : ''}
+                      {chart.localTime}.
+                    </>
+                  )}
               </li>
               <li>
                 Planetary positions come from an ephemeris evaluated at that instant, converted to
