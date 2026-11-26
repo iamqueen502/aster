@@ -129,13 +129,58 @@ export async function deleteProfile(id: string, session: Session | null): Promis
   )
 }
 
+/**
+ * Progress the account has not accepted yet, kept so a failed write can be
+ * retried instead of disappearing when the page reloads.
+ */
+const PENDING_KEY = 'aster.pending-progress.v1'
+
+function pendingProgress(): ProgressState | null {
+  const value = readJson<ProgressState | null>(PENDING_KEY, null)
+  return value && typeof value === 'object' && value.lessons ? value : null
+}
+
+/**
+ * The pending copy covers only what the account has not taken, so it goes on
+ * top: those are the steps this device would otherwise lose.
+ */
+function mergeProgress(
+  base: ProgressState,
+  over: ProgressState | null,
+): ProgressState {
+  return over ? { lessons: { ...base.lessons, ...over.lessons } } : base
+}
+
+/**
+ * Sends progress to the account, carrying any earlier unsent step with it.
+ * Returns null once the account has it, or the state still owed so the caller
+ * can keep a local copy.
+ */
+async function pushProgress(progress: ProgressState): Promise<ProgressState | null> {
+  const body = mergeProgress(progress, pendingProgress())
+  try {
+    await api('/api/progress', { method: 'PUT', body: JSON.stringify({ progress: body }) })
+    writeJson(PENDING_KEY, null)
+    return null
+  } catch {
+    writeJson(PENDING_KEY, body)
+    return body
+  }
+}
+
 export async function loadProgress(session: Session | null): Promise<ProgressState> {
   if (canSync(session)) {
+    // A write that failed last time is retried before the account is read, so
+    // the step reaches the server rather than being dropped on the next load.
+    const pending = pendingProgress()
+    if (pending) await pushProgress(pending)
     try {
       const result = await api<{ progress: ProgressState }>('/api/progress')
-      return result.progress ?? EMPTY
+      // Anything the account still has not accepted stays visible, so a
+      // second failed attempt cannot hide the step either.
+      return mergeProgress(result.progress ?? EMPTY, pendingProgress())
     } catch {
-      return readJson<ProgressState>(PROGRESS_KEY, EMPTY)
+      return mergeProgress(readJson<ProgressState>(PROGRESS_KEY, EMPTY), pendingProgress())
     }
   }
   return readJson<ProgressState>(PROGRESS_KEY, EMPTY)
@@ -146,12 +191,11 @@ export async function saveProgress(
   session: Session | null,
 ): Promise<void> {
   if (canSync(session)) {
-    try {
-      await api('/api/progress', { method: 'PUT', body: JSON.stringify({ progress }) })
-      return
-    } catch {
-      /* fall through to the local copy so a lost connection does not lose a step */
-    }
+    const unsent = await pushProgress(progress)
+    if (!unsent) return
+    /* keep the step on this device so the next load or save can retry it */
+    writeJson(PROGRESS_KEY, unsent)
+    return
   }
   writeJson(PROGRESS_KEY, progress)
 }
