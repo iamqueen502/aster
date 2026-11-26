@@ -109,17 +109,22 @@ export function ReadingPage({ id, session }: { id: string; session: Session | nu
   const [tab, setTab] = useState<'chart' | 'learn'>('chart')
   const [selection, setSelection] = useState<Selection | null>({ kind: 'planet', key: 'sun' })
   const [progress, setProgress] = useState<ProgressState>({ lessons: {} })
+  const [progressLoaded, setProgressLoaded] = useState(false)
   const [editing, setEditing] = useState(false)
 
   useEffect(() => {
     if (!session) return
     let live = true
+    setProgressLoaded(false)
     void (async () => {
       const found = id === 'sample' ? SAMPLE_PROFILE : await getProfile(id, session)
       if (!live) return
       setProfile(found)
       setState(found ? 'ready' : 'missing')
-      setProgress(await loadProgress(session))
+      const loaded = await loadProgress(session)
+      if (!live) return
+      setProgress(loaded)
+      setProgressLoaded(true)
     })()
     return () => {
       live = false
@@ -347,13 +352,15 @@ export function ReadingPage({ id, session }: { id: string; session: Session | nu
             </ol>
           </details>
         </>
-      ) : (
+      ) : progressLoaded ? (
         <Learn
           chart={chart}
           chartId={profile.id}
           progress={progress}
           onProgress={update}
         />
+      ) : (
+        <p className="notice">Loading your progress…</p>
       )}
     </>
   )
