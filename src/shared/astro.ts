@@ -97,8 +97,18 @@ export function isValidTimeZone(tz: string): boolean {
 }
 
 const formatters = new Map<string, Intl.DateTimeFormat>()
+const HOUR_MS = 3_600_000
 
-function zoneOffset(ts: number, tz: string): number {
+type ZoneParts = {
+  year: number
+  month: number
+  day: number
+  hour: number
+  minute: number
+  second: number
+}
+
+function zoneParts(ts: number, tz: string): ZoneParts {
   let formatter = formatters.get(tz)
   if (!formatter) {
     formatter = new Intl.DateTimeFormat('en-US', {
@@ -116,38 +126,126 @@ function zoneOffset(ts: number, tz: string): number {
   const parts = formatter.formatToParts(new Date(ts))
   const value = (type: string) =>
     Number(parts.find((part) => part.type === type)?.value ?? '0')
+  return {
+    year: value('year'),
+    month: value('month'),
+    day: value('day'),
+    hour: value('hour'),
+    minute: value('minute'),
+    second: value('second'),
+  }
+}
+
+function zoneOffset(ts: number, tz: string): number {
+  const parts = zoneParts(ts, tz)
   const asUtc = Date.UTC(
-    value('year'),
-    value('month') - 1,
-    value('day'),
-    value('hour'),
-    value('minute'),
-    value('second'),
+    parts.year,
+    parts.month - 1,
+    parts.day,
+    parts.hour,
+    parts.minute,
+    parts.second,
   )
   return asUtc - ts
 }
 
+/** The wall-clock reading in `tz` at an instant, as a date and HH:MM. */
+function localReading(ts: number, tz: string): { date: string; clock: string } {
+  const parts = zoneParts(ts, tz)
+  const pad = (value: number) => String(value).padStart(2, '0')
+  return {
+    date: `${parts.year}-${pad(parts.month)}-${pad(parts.day)}`,
+    clock: `${pad(parts.hour)}:${pad(parts.minute)}`,
+  }
+}
+
 /**
- * Turns a local wall-clock time in an IANA zone into a UTC instant. The offset
- * is looked up at the candidate instant and refined, so historical daylight
- * saving rules are respected instead of assumed.
+ * The offsets a zone could be on around one wall-clock reading. A clock change
+ * puts two of them within a day of the reading, and the fixed-point walk adds
+ * whichever one a plain iteration settles on, so both sides of the jump are
+ * tested instead of trusting the first answer.
+ */
+function offsetsAround(naive: number, zone: string): number[] {
+  const offsets = new Set<number>()
+  for (const hours of [-36, -24, -12, 0, 12, 24, 36])
+    offsets.add(zoneOffset(naive + hours * HOUR_MS, zone))
+  let ts = naive
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const offset = zoneOffset(ts, zone)
+    offsets.add(offset)
+    const next = naive - offset
+    if (next === ts) break
+    ts = next
+  }
+  return [...offsets]
+}
+
+export type LocalTimeResolution = {
+  utc: Date
+  /** The zone's real offset at `utc`, in minutes east of UTC. */
+  offsetMinutes: number
+  /**
+   * `unique` for an ordinary reading; `ambiguous` when the clock read it twice;
+   * `nonexistent` when the clock jumped over it.
+   */
+  kind: 'unique' | 'ambiguous' | 'nonexistent'
+  /** The other instant when the reading was repeated or skipped. */
+  other: { utc: Date; offsetMinutes: number } | null
+}
+
+/**
+ * Turns a local wall-clock time in an IANA zone into a UTC instant.
+ *
+ * An ordinary reading names one instant, but at a clock change it can name two
+ * (the clock was put back) or none (it jumped forward). Those cases are resolved
+ * deliberately instead of landing wherever the iteration happens to stop: a
+ * repeated reading takes its first occurrence, a skipped one the time the clock
+ * jumped to. `kind` reports which happened, so the chart can say so out loud.
+ * Historical daylight-saving rules are still read from the zone, not assumed.
  */
 export function localToUtc(
   dateStr: string,
   timeStr: string,
   tz: string,
-): { utc: Date; offsetMinutes: number } {
+): LocalTimeResolution {
   const [year, month, day] = dateStr.split('-').map(Number)
   const [hour, minute] = timeStr.split(':').map(Number)
   const naive = Date.UTC(year!, (month ?? 1) - 1, day ?? 1, hour ?? 0, minute ?? 0)
   const zone = isValidTimeZone(tz) ? tz : 'UTC'
-  let ts = naive
-  for (let attempt = 0; attempt < 4; attempt += 1) {
-    const next = naive - zoneOffset(ts, zone)
-    if (next === ts) break
-    ts = next
+  const offsets = offsetsAround(naive, zone)
+
+  // A candidate offset is real only if the zone is still on it at the instant
+  // it implies. Zero matches means the clock skipped the reading; two mean it
+  // repeated it; one is an ordinary day.
+  const matches: number[] = []
+  for (const offset of offsets) {
+    const ts = naive - offset
+    if (zoneOffset(ts, zone) === offset && !matches.includes(ts)) matches.push(ts)
   }
-  return { utc: new Date(ts), offsetMinutes: Math.round((naive - ts) / 60_000) }
+  matches.sort((a, b) => a - b)
+  const at = (ts: number) => ({
+    utc: new Date(ts),
+    offsetMinutes: Math.round(zoneOffset(ts, zone) / 60_000),
+  })
+
+  if (matches.length === 1)
+    return { ...at(matches[0]!), kind: 'unique', other: null }
+  if (matches.length > 1)
+    return {
+      ...at(matches[0]!),
+      kind: 'ambiguous',
+      other: at(matches[matches.length - 1]!),
+    }
+
+  // The clock jumped over this reading. Applying the offset from before the
+  // jump lands after it, at the time the clock jumped to (02:30 becomes 03:30).
+  // That is the same choice Temporal calls "compatible" disambiguation.
+  const candidates = offsets.map((offset) => naive - offset)
+  return {
+    ...at(Math.max(...candidates)),
+    kind: 'nonexistent',
+    other: at(Math.min(...candidates)),
+  }
 }
 
 export function formatOffset(minutes: number): string {
@@ -260,7 +358,22 @@ export function computeChart(profile: ProfileInput): Chart {
   const clock = timeKnown ? profile.birthTime : '12:00'
   const tz = isValidTimeZone(profile.tz) ? profile.tz : 'UTC'
   if (tz !== profile.tz) warnings.push(`Unknown time zone “${profile.tz}” — calculated as UTC.`)
-  const { utc, offsetMinutes } = localToUtc(profile.birthDate, clock, tz)
+  const moment = localToUtc(profile.birthDate, clock, tz)
+  const { utc, offsetMinutes } = moment
+  // A skipped clock reading can land on another date: Samoa skipped a whole
+  // day in 2011, so the label follows the instant, not the entered date.
+  const reading = localReading(utc.getTime(), tz)
+
+  // A clock change can make the entered reading name two instants or none.
+  // localToUtc resolved it; say which reading the chart is actually built on.
+  if (moment.kind === 'ambiguous')
+    warnings.push(
+      `The clock read ${clock} twice on ${profile.birthDate} in ${tz}, because it was put back that day. This chart uses the first occurrence, ${formatOffset(offsetMinutes)}; the repeat at ${formatOffset(moment.other!.offsetMinutes)} would move the Ascendant and the Moon.`,
+    )
+  else if (moment.kind === 'nonexistent')
+    warnings.push(
+      `The clock skipped ${clock} on ${profile.birthDate} in ${tz}, because it jumped forward that day. This chart uses ${reading.date} ${reading.clock} (${formatOffset(offsetMinutes)}), the time the clock jumped to.`,
+    )
 
   if (!timeKnown)
     warnings.push(
@@ -330,7 +443,8 @@ export function computeChart(profile: ProfileInput): Chart {
 
   return {
     timeKnown,
-    localLabel: `${profile.birthDate} ${clock} (${tz})`,
+    localTime: reading.clock,
+    localLabel: `${reading.date} ${reading.clock} (${tz})`,
     utcLabel: `${utc.toISOString().slice(0, 16).replace('T', ' ')} UTC`,
     offsetLabel: formatOffset(offsetMinutes),
     bodies,
