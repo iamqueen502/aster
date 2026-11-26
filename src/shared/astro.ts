@@ -444,6 +444,7 @@ export function computeChart(profile: ProfileInput): Chart {
   return {
     timeKnown,
     localTime: reading.clock,
+    localDate: reading.date,
     localLabel: `${reading.date} ${reading.clock} (${tz})`,
     utcLabel: `${utc.toISOString().slice(0, 16).replace('T', ' ')} UTC`,
     offsetLabel: formatOffset(offsetMinutes),

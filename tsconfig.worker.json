@@ -5,5 +5,5 @@
     "types": ["@cloudflare/workers-types", "bun"]
   },
   "include": ["src/worker", "src/shared", "tests"],
-  "exclude": ["tests/reading-progress.test.tsx"]
+  "exclude": ["tests/reading-progress.test.tsx", "tests/chart-warnings.test.tsx"]
 }
