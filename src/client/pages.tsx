@@ -103,6 +103,30 @@ export function HomePage({ session }: { session: Session | null }) {
   )
 }
 
+/**
+ * The chart's clock-shift notes, announced when they arrive. The live region
+ * mounts before its text lands, so a screen reader hears the change rather than
+ * missing text that was present the moment the region appeared.
+ */
+function ChartWarnings({ warnings }: { warnings: string[] }) {
+  const [announced, setAnnounced] = useState<string[]>([])
+  useEffect(() => {
+    setAnnounced(warnings)
+  }, [warnings])
+  return (
+    <ul
+      className="warnings"
+      aria-live="polite"
+      aria-atomic="true"
+      style={announced.length === 0 ? { margin: 0 } : undefined}
+    >
+      {announced.map((warning) => (
+        <li key={warning.slice(0, 20)}>{warning}</li>
+      ))}
+    </ul>
+  )
+}
+
 export function ReadingPage({ id, session }: { id: string; session: Session | null }) {
   const [profile, setProfile] = useState<Profile | null>(null)
   const [state, setState] = useState<'loading' | 'ready' | 'missing' | 'failed'>('loading')
@@ -222,13 +246,7 @@ export function ReadingPage({ id, session }: { id: string; session: Session | nu
         </button>
       </div>
 
-      {chart.warnings.length > 0 && (
-        <ul className="warnings">
-          {chart.warnings.map((warning) => (
-            <li key={warning.slice(0, 20)}>{warning}</li>
-          ))}
-        </ul>
-      )}
+      <ChartWarnings warnings={chart.warnings} />
 
       {tab === 'chart' ? (
         <>

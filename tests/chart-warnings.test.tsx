@@ -66,6 +66,8 @@ const flush = () =>
     await new Promise((resolve) => setTimeout(resolve, 0))
   })
 
+const liveRegion = () => container.querySelector<HTMLElement>('[aria-live="polite"]')
+
 /** Renders the reading page and returns its visible text, whitespace collapsed. */
 async function renderChart(profile: Profile): Promise<string> {
   loaded = profile
@@ -94,6 +96,13 @@ test('a repeated birth reading warns in the chart and keeps the arithmetic in st
     'This chart uses the first occurrence, UTC−04:00; the repeat at UTC−05:00 would move the Ascendant and the Moon.',
   )
 
+  // A screen reader gets the same warning through a polite live region.
+  const live = liveRegion()
+  expect(live).not.toBeNull()
+  expect(live!.getAttribute('aria-atomic')).toBe('true')
+  expect(live!.textContent).toContain('The clock read 01:30 twice on 2024-11-03 in America/New_York')
+  expect(live!.textContent).toContain('This chart uses the first occurrence, UTC−04:00')
+
   // The method panel's worked example is for the instant actually used.
   expect(text).toContain(
     'Birth clock 01:30 in America/New_York was converted to 2024-11-03 05:30 UTC (UTC−04:00)',
@@ -117,6 +126,12 @@ test('a birth reading the clock skipped warns in the chart and shows the jumped-
   expect(text).toContain(
     'This chart uses 2024-03-10 03:30 (UTC−04:00), the time the clock jumped to.',
   )
+
+  const live = liveRegion()
+  expect(live).not.toBeNull()
+  expect(live!.getAttribute('aria-atomic')).toBe('true')
+  expect(live!.textContent).toContain('The clock skipped 02:30 on 2024-03-10 in America/New_York')
+  expect(live!.textContent).toContain('This chart uses 2024-03-10 03:30 (UTC−04:00)')
 
   // 02:30 at UTC−04:00 would read 06:30Z; the chart must say 07:30Z and own it.
   expect(text).toContain(
@@ -142,6 +157,12 @@ test('a whole day the clock skipped warns with the date it moved to', async () =
   expect(text).toContain(
     'This chart uses 2011-12-31 12:00 (UTC+14:00), the time the clock jumped to.',
   )
+
+  const live = liveRegion()
+  expect(live).not.toBeNull()
+  expect(live!.getAttribute('aria-atomic')).toBe('true')
+  expect(live!.textContent).toContain('The clock skipped 12:00 on 2011-12-30 in Pacific/Apia')
+  expect(live!.textContent).toContain('This chart uses 2011-12-31 12:00 (UTC+14:00)')
   expect(text).toContain('from 2011-12-31 12:00 (Pacific/Apia) (UTC+14:00)')
   // The clock reading is unchanged, but the date is not, so the panel must not
   // imply the entered 30 December was the day calculated.
