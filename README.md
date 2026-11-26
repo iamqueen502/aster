@@ -59,7 +59,9 @@ account write failed being retried on the next load instead of lost. A rendered
 test in a DOM opens Learn while the saved step is still in flight and checks the
 player lands on that step rather than staying at the first one. Rendered checks
 also feed the reading page a birth time the clock repeated and one it skipped,
-then assert the warning and the time the chart used both reach the markup.
+then assert the warning and the time the chart used both reach the markup. When
+the account's chart request fails, rendered checks assert the page says so and
+retries rather than presenting an empty account.
 
 Those tests import the app factory with an injected identity, which leaves the
 deployed path uncovered. `bun run smoke:worker` closes that gap: it loads
