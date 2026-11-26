@@ -54,7 +54,9 @@ Sun position, DST conversions, the Ascendant on the horizon, the Midheaven at
 transit, house invariance), the API's authentication, ownership and validation
 rules against a real local D1 database, and the client's single-write-path
 behaviour for both guests and signed-in users, including a lesson step whose
-account write failed being retried on the next load instead of lost.
+account write failed being retried on the next load instead of lost. A rendered
+test in a DOM opens Learn while the saved step is still in flight and checks the
+player lands on that step rather than staying at the first one.
 
 Those tests import the app factory with an injected identity, which leaves the
 deployed path uncovered. `bun run smoke:worker` closes that gap: it loads
